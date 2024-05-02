@@ -5,6 +5,7 @@
 ---------------------------------------------------------
 extracts near cell environment
 loops through time instead of cells for efficiency
+one file per cell and timestep where it is active and environment is available
 ---------------------------------------------------------
 IN
 day to analyze (yyyymmdd)
@@ -19,7 +20,7 @@ gives one file per cell, named by day_id
 EXAMPLE CALL
 python extract_environment.py 20240412 /path/to/track /path/to/environment /path/to/output
 
-python /home/kbrennan/cookie_cutter/extract_environment.py /home/kbrennan/phd/data/climate/tracks/present /home/kbrennan/phd/data/climate/present /home/kbrennan/phd/data/climate/cookies/present 20210628 20210628
+python /home/kbrennan/cookie_cutter/extract_environment.py /home/kbrennan/phd/data/climate/tracks/present /home/kbrennan/phd/data/climate/present /home/kbrennan/phd/data/climate/cookies/present 20210601 20210630
 
 ---------------------------------------------------------
 Killian P. Brennan
@@ -49,13 +50,12 @@ def main(trackdir, envdir, outpath, start_day, end_day, window_radius=25):
     for day in daylist:
         day_str = day.strftime("%Y%m%d")
 
-        # create temporary directory
-        dir_temp = os.path.join(outpath, f"temp_{day_str}")
-        os.makedirs(dir_temp, exist_ok=True)
-
         cells = load_cells(trackdir, day_str)
 
         cells = filter(cells)
+
+        for cell in cells:
+            cell["itime"] = 0
 
         times = [day + pd.Timedelta(hours=i) for i in range(24)]
 
@@ -78,91 +78,32 @@ def main(trackdir, envdir, outpath, start_day, end_day, window_radius=25):
 
                     cookie = mask_cookie(cookie, window_radius)
 
-                    # save environment
-                    unique_id = int((day_str + str(cell["cell_id"]).zfill(5)))
-                    cookie.expand_dims({"unique_id": [unique_id]})
+                    cookie = add_attributes(cookie, cell, now)
 
-                    # make dir for cell
-                    os.makedirs(
-                        os.path.join(dir_temp, f"{unique_id}"),
-                        exist_ok=True,
-                    )
+                    cookie_id = int(
+                        (
+                            day_str
+                            + str(cell["cell_id"]).zfill(5)
+                            + str(cell["itime"]).zfill(2)
+                        )
+                    )  
+                    cookie = cookie.squeeze()
+                    # remove time dimension
+                    cookie = cookie.drop_vars("time")
+                    cookie = cookie.expand_dims({"cookie_id": [cookie_id]})
 
+                    comp = dict(zlib=True, complevel=9)
+                    encoding = {var: comp for var in cookie.data_vars}
                     cookie.to_netcdf(
-                        os.path.join(
-                            dir_temp,
-                            str(unique_id),
-                            f"{day_str}{now.hour}.nc",
-                        ),
+                        os.path.join(outpath, f"cookie_{cookie_id}.nc"),
+                        encoding=encoding,
                     )
-
-        # merge all files for each cell
-        dirs = os.listdir(dir_temp)
-        for id in dirs:
-            # delete file if it already exists
-            if os.path.exists(os.path.join(outpath, f"cookie_{id}.nc")):
-                os.remove(os.path.join(outpath, f"cookie_{id}.nc"))
-            # os.system(
-            #     "cdo mergetime "
-            #     + os.path.join(dir_temp, id, "*.nc")
-            #     + " "
-            #     + os.path.join(outpath, f"cookie_{id}.nc")
-            # )
-            cookie = merge_files(id, dir_temp)
-            cell = [cell for cell in cells if cell["cell_id"] == int(id[-4:])][0]
-            cookie = add_attributes(cookie, cell)
-
-            # cookie = make_itime(cookie)
-            n_timesteps = len(cookie.time)
-            # compute mean along time dimension
-            cookie = cookie.mean(dim="time", keep_attrs=True, skipna=True)
-            # add cell_id dimension
-            cookie = cookie.expand_dims({"cell_id": [id]})
-
-            # add attribute on how many timesteps are included
-            cookie["n_timesteps"] = n_timesteps
-            # add more details on n_timesteps
-            cookie["n_timesteps"].assign_attrs(
-                {
-                    "units": "hours",
-                    "long_name": "number of hourly timesteps included in the cookie",
-                }
-            )
-
-            comp = dict(zlib=True, complevel=9)
-            encoding = {var: comp for var in cookie.data_vars}
-            cookie.to_netcdf(
-                os.path.join(outpath, f"cookie_{id}.nc"), encoding=encoding
-            )
-
-        # remove temporary directory
-        os.system(f"rm -r {dir_temp}")
+                    cell["itime"] += 1
 
     return
 
 
-def merge_files(id, dir_temp):
-    files = os.listdir(os.path.join(dir_temp, id))
-    cookie = xr.open_mfdataset(
-        [os.path.join(dir_temp, id, file) for file in files],
-        combine="nested",
-        concat_dim="time",
-    )
-    return cookie
-
-
-def make_itime(cookie):
-    """
-    make integer time index
-    and replace time with itime
-    """
-    cookie = cookie.rename({"time": "itime"})
-    cookie.coords["itime"] = np.arange(cookie.itime.size)
-
-    return cookie
-
-
-def add_attributes(cookie, cell):
+def add_attributes(cookie, cell, now):
     # add lat / lon of maximum intensity
     cookie["lon_max"] = cell["lon"][np.argmax(cell["max_val"])]
     cookie["lat_max"] = cell["lat"][np.argmax(cell["max_val"])]
@@ -196,12 +137,49 @@ def add_attributes(cookie, cell):
             "long_name": "maximum hail diameter produced by the cell",
         }
     )
-    # cookie["cell_start_time"] = cell["datelist"][0].strftime("%Y-%m-%d %H:%M:%S")
-    # cookie["cell_start_time"].assign_attrs(
-    #     {
-    #         "long_name": "start time of the cell",
-    #     }
-    # )
+    cookie['real_time'] = now
+    cookie['real_time'].assign_attrs(
+        {
+            "units": "datetime",
+            "long_name": "real time of the cell cookie timestep",
+        }
+    )
+    # time in minutes relative to start of the cell
+    cookie['t_rel_start'] = (now - cell["datelist"][0]).seconds / 60
+    cookie['t_rel_start'].assign_attrs(
+        {
+            "units": "minutes",
+            "long_name": "time in minutes relative to start of the cell",
+        }
+    )
+    # time in minutes relative to end of the cell
+    cookie['t_rel_end'] = -(cell["datelist"][-1]-now).seconds / 60
+    cookie['t_rel_end'].assign_attrs(
+        {
+            "units": "minutes",
+            "long_name": "time in minutes relative to end of the cell",
+        }
+    )
+    # time relative to maximum intensity of the cell
+    t_max = cell["datelist"][np.argmax(cell["max_val"])]
+    if t_max < now:
+        cookie['t_rel_max'] = (now - t_max).seconds / 60
+    else:
+        cookie['t_rel_max'] = -(t_max - now).seconds / 60
+    cookie['t_rel_max'].assign_attrs(
+        {
+            "units": "minutes",
+            "long_name": "time in minutes relative to maximum intensity of the cell",
+        }
+    )
+    cookie['itime'] = cell["itime"]
+    cookie['itime'].assign_attrs(
+        {
+            "units": "int",
+            "long_name": "time index of the cell cookie",
+        }
+    )
+
     return cookie
 
 
