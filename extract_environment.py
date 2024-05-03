@@ -24,7 +24,8 @@ python /home/kbrennan/cookie_cutter/extract_environment.py /home/kbrennan/phd/da
 
 ---------------------------------------------------------
 Killian P. Brennan
-12.04.2024
+02.05.2024
+version 0.1
 ---------------------------------------------------------
 """
 
@@ -34,6 +35,8 @@ import xarray as xr
 import numpy as np
 import pandas as pd
 from argparse import ArgumentParser
+import metpy.calc as mpcalc
+from metpy.units import units
 
 
 def main(trackdir, envdir, outpath, start_day, end_day, window_radius=25):
@@ -74,6 +77,8 @@ def main(trackdir, envdir, outpath, start_day, end_day, window_radius=25):
                     if cookie is None:
                         continue
 
+                    cookie = add_secondary_variables(cookie)
+
                     cookie = rotate_cookie(cookie, cell)
 
                     cookie = mask_cookie(cookie, window_radius)
@@ -86,24 +91,203 @@ def main(trackdir, envdir, outpath, start_day, end_day, window_radius=25):
                             + str(cell["cell_id"]).zfill(5)
                             + str(cell["itime"]).zfill(2)
                         )
-                    )  
-                    cookie = cookie.squeeze()
-                    # remove time dimension
+                    )
                     cookie = cookie.drop_vars("time")
                     cookie = cookie.expand_dims({"cookie_id": [cookie_id]})
+                    write_cookie(cookie, outpath, cookie_id)
 
-                    comp = dict(zlib=True, complevel=9)
-                    encoding = {var: comp for var in cookie.data_vars}
-                    cookie.to_netcdf(
-                        os.path.join(outpath, f"cookie_{cookie_id}.nc"),
-                        encoding=encoding,
-                    )
                     cell["itime"] += 1
-
     return
 
 
+def write_cookie(cookie, outpath, cookie_id):
+    comp = dict(zlib=True, complevel=9)
+
+    # change all double variables to float
+    for var in cookie.data_vars:
+        if cookie[var].dtype == "float64":
+            cookie[var] = cookie[var].astype("float32")
+            
+    encoding = {var: comp for var in cookie.data_vars}
+    cookie.to_netcdf(
+        os.path.join(outpath, f"cookie_{cookie_id}.nc"),
+        encoding=encoding,
+    )
+    return
+
+
+def add_secondary_variables(cookie):
+    """calculate secondary variables for the cookie
+    specific humidity
+    dewpoint
+    2m dewpoint
+    theta
+    2m theta
+    theta e
+    2m theta e
+    vorticity
+    divergence
+    """
+    # dewpoint
+    cookie["DP"] = xr.DataArray(
+        (
+            mpcalc.dewpoint_from_relative_humidity(
+                cookie["T"] * units.K,
+                cookie["RELHUM"] * units.percent,
+            )
+            / units.K
+        ).values,
+        dims=["pressure", "y", "x"],
+        coords={"y": cookie.y, "x": cookie.x},
+    )
+
+    cookie["DP"].attrs = {
+        "units": "K",
+        "long_name": "dewpoint temperature",
+    }
+
+    # 2m dewpoint
+    cookie["DP_2M"] = xr.DataArray(
+        (
+            mpcalc.dewpoint_from_relative_humidity(
+                cookie["T_2M"] * units.K,
+                cookie["RELHUM_2M"] * units.percent,
+            )
+            / units.K
+        ).values,
+        dims=["y", "x"],
+        coords={"y": cookie.y, "x": cookie.x},
+    )
+
+    cookie["DP_2M"].attrs = {
+        "units": "K",
+        "long_name": "dewpoint temperature at 2m",
+    }
+
+    # theta
+    cookie["THETA"] = xr.DataArray(
+        (
+            mpcalc.potential_temperature(
+                cookie.pressure * units.Pa,
+                cookie["T"] * units.K,
+            )
+            / units.K
+        ).values,
+        dims=["pressure", "y", "x"],
+        coords={"y": cookie.y, "x": cookie.x},
+    )
+
+    cookie["THETA"].attrs = {
+        "units": "K",
+        "long_name": "potential temperature",
+    }
+
+    # 2m theta
+    cookie["THETA_2M"] = xr.DataArray(
+        (
+            mpcalc.potential_temperature(
+                cookie["PS"] * units.Pa,
+                cookie["T_2M"] * units.K,
+            )
+            / units.K
+        ).values,
+        dims=["y", "x"],
+        coords={"y": cookie.y, "x": cookie.x},
+    )
+
+    cookie["THETA_2M"].attrs = {
+        "units": "K",
+        "long_name": "potential temperature at 2m",
+    }
+
+    # theta e
+    cookie["THETA_E"] = xr.DataArray(
+        (
+            mpcalc.equivalent_potential_temperature(
+                cookie.pressure * units.Pa,
+                cookie["T"] * units.K,
+                cookie["DP"] * units.K,
+            )
+            / units.K
+        ).values,
+        dims=["pressure", "y", "x"],
+        coords={"y": cookie.y, "x": cookie.x},
+    )
+
+    cookie["THETA_E"].attrs = {
+        "units": "K",
+        "long_name": "equivalent potential temperature",
+    }
+
+    # 2m theta e
+    cookie["THETA_E_2M"] = xr.DataArray(
+        (
+            mpcalc.equivalent_potential_temperature(
+                cookie["PS"] * units.Pa,
+                cookie["T_2M"] * units.K,
+                cookie["DP_2M"] * units.K,
+            )
+            / units.K
+        ).values,
+        dims=["y", "x"],
+        coords={"y": cookie.y, "x": cookie.x},
+    )
+
+    cookie["THETA_E_2M"].attrs = {
+        "units": "K",
+        "long_name": "equivalent potential temperature at 2m",
+    }
+
+    # vorticity
+    cookie["VORT"] = xr.DataArray(
+        (
+            mpcalc.vorticity(
+                cookie["U"] * units("m/s"),
+                cookie["V"] * units("m/s"),
+                dx=2.2 * units.km,
+                dy=2.2 * units.km,
+            )
+            / units("s^-1")
+        ).values,
+        dims=["pressure", "y", "x"],
+    )
+
+    cookie["VORT"].attrs = {
+        "units": "s^-1",
+        "long_name": "vorticity",
+    }
+
+    # divergence
+    cookie["DIV"] = xr.DataArray(
+        (
+            mpcalc.divergence(
+                cookie["U"] * units("m/s"),
+                cookie["V"] * units("m/s"),
+                dx=2.2 * units.km,
+                dy=2.2 * units.km,
+            )
+            / units("s^-1")
+        ).values,
+        dims=["pressure", "y", "x"],
+    )
+
+    cookie["DIV"].attrs = {
+        "units": "s^-1",
+        "long_name": "divergence",
+    }
+
+    return cookie
+
+
 def add_attributes(cookie, cell, now):
+    # add information on the version of cookie creator / extract_environment.py
+    cookie.attrs["cookie_creator"] = "extract_environment.py"
+    cookie.attrs["cookie_creator_version"] = "0.1"
+    cookie.attrs["cookie_creator_version_date"] = "20240502"
+    cookie.attrs["cookie_creator_author"] = "Killian P. Brennan"
+    # date of creation
+    cookie.attrs["creation_date"] = pd.Timestamp.now().strftime("%Y%m%d%H%M")
+
     # add lat / lon of maximum intensity
     cookie["lon_max"] = cell["lon"][np.argmax(cell["max_val"])]
     cookie["lat_max"] = cell["lat"][np.argmax(cell["max_val"])]
@@ -137,24 +321,24 @@ def add_attributes(cookie, cell, now):
             "long_name": "maximum hail diameter produced by the cell",
         }
     )
-    cookie['real_time'] = now
-    cookie['real_time'].assign_attrs(
+    cookie["real_time"] = now
+    cookie["real_time"].assign_attrs(
         {
             "units": "datetime",
             "long_name": "real time of the cell cookie timestep",
         }
     )
     # time in minutes relative to start of the cell
-    cookie['t_rel_start'] = (now - cell["datelist"][0]).seconds / 60
-    cookie['t_rel_start'].assign_attrs(
+    cookie["t_rel_start"] = (now - cell["datelist"][0]).seconds / 60
+    cookie["t_rel_start"].assign_attrs(
         {
             "units": "minutes",
             "long_name": "time in minutes relative to start of the cell",
         }
     )
     # time in minutes relative to end of the cell
-    cookie['t_rel_end'] = -(cell["datelist"][-1]-now).seconds / 60
-    cookie['t_rel_end'].assign_attrs(
+    cookie["t_rel_end"] = -(cell["datelist"][-1] - now).seconds / 60
+    cookie["t_rel_end"].assign_attrs(
         {
             "units": "minutes",
             "long_name": "time in minutes relative to end of the cell",
@@ -163,17 +347,17 @@ def add_attributes(cookie, cell, now):
     # time relative to maximum intensity of the cell
     t_max = cell["datelist"][np.argmax(cell["max_val"])]
     if t_max < now:
-        cookie['t_rel_max'] = (now - t_max).seconds / 60
+        cookie["t_rel_max"] = (now - t_max).seconds / 60
     else:
-        cookie['t_rel_max'] = -(t_max - now).seconds / 60
-    cookie['t_rel_max'].assign_attrs(
+        cookie["t_rel_max"] = -(t_max - now).seconds / 60
+    cookie["t_rel_max"].assign_attrs(
         {
             "units": "minutes",
             "long_name": "time in minutes relative to maximum intensity of the cell",
         }
     )
-    cookie['itime'] = cell["itime"]
-    cookie['itime'].assign_attrs(
+    cookie["itime"] = cell["itime"]
+    cookie["itime"].assign_attrs(
         {
             "units": "int",
             "long_name": "time index of the cell cookie",
@@ -206,8 +390,8 @@ def rotate_cookie(cookie, cell):
     angle = np.arctan2(v_storm, u_storm)
     # rotate the cookie
     cookie = cookie.interp(
-        x=cookie.x * np.cos(angle) + cookie.y * np.sin(angle),
-        y=-cookie.x * np.sin(angle) + cookie.y * np.cos(angle),
+        x=-cookie.x * np.sin(angle) + cookie.y * np.cos(angle),
+        y=cookie.x * np.cos(angle) + cookie.y * np.sin(angle),
     )
 
     # u and v wind components need to be rotated as well
@@ -263,6 +447,8 @@ def cutout_cookie(cell, env, now, window_radius=25):
 
     cookie = cookie.drop_vars(["lat", "lon"])
     cookie = cookie.drop_dims(["bnds", "level1", "windsector", "soil1"])
+
+    cookie = cookie.squeeze()
 
     return cookie
 
