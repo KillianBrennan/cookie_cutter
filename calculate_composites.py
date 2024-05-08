@@ -1,3 +1,9 @@
+
+'''
+
+python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/future
+'''
+
 import os
 
 import xarray as xr
@@ -7,7 +13,11 @@ import argparse
 
 
 def main(cookie_dir):
-    os.makedirs("composites", exist_ok=True)
+    composite_dir = os.path.join(cookie_dir,"composites")
+    os.makedirs(composite_dir, exist_ok=True)
+    # remove existing composites
+    for f in os.listdir(composite_dir):
+        os.remove(os.path.join(composite_dir, f))
 
     subdomain_dir = os.path.join(cookie_dir, "subdomains")
 
@@ -16,7 +26,9 @@ def main(cookie_dir):
             print(dom)
             cookies = load_cookies(os.path.join(subdomain_dir, dom))
             mean = calculate_composite(cookies)
-            mean.to_netcdf(os.path.join("composites", f"{dom}_mean.nc"))
+            # add dimension for subdomain
+            mean = mean.expand_dims({"domain": [dom]})
+            mean.to_netcdf(os.path.join(composite_dir, f"{dom}_mean.nc"))
     return
 
 

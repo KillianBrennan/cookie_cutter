@@ -13,7 +13,7 @@ OUT
 ---------------------------------------------------------
 EXAMPLE CALL
 
-python /home/kbrennan/cookie_cutter/assign_subdomain.py /home/kbrennan/phd/data/climate/cookies/present /home/kbrennan/phd/data/climate/grids/subdomains_rot.nc
+python /home/kbrennan/cookie_cutter/assign_subdomain.py /home/kbrennan/phd/data/climate/cookies/present /home/kbrennan/phd/data/climate/grids/subdomains.nc
 
 ---------------------------------------------------------
 Killian P. Brennan
