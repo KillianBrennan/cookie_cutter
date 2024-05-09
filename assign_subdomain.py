@@ -61,10 +61,11 @@ def main(cookie_dir, subdomain_dir):
             )
             if test == 1.0:
                 print(f"Assigning {f} to {dom}")
-                os.symlink(
-                    os.path.join(cookie_dir, f),
-                    os.path.join(cookie_dir, 'subdomains', dom, f),
-                )
+                if not os.path.exists(os.path.join(cookie_dir, 'subdomains', dom, f)):
+                    os.symlink(
+                        os.path.join(cookie_dir, f),
+                        os.path.join(cookie_dir, 'subdomains', dom, f),
+                    )
     return
 
 
