@@ -68,7 +68,7 @@ def do_calculations(cookie_dir, composite_dir, dom):
 
 def load_cookies(cookie_dir):
     cookies = xr.open_mfdataset(
-        os.path.join(cookie_dir, "*.nc"),
+        os.path.join(cookie_dir, "cookie_*.nc"),
         combine="by_coords",
         parallel=True,
         chunks={"cookie_id": 1000},
@@ -80,23 +80,25 @@ def load_cookies(cookie_dir):
         xr.where(
             cookies["real_time.month"].isin([3, 4, 5]),
             "MAM",
-            xr.where(
-                cookies["real_time.month"].isin([6, 7, 8]),
-                "JJA",
-                xr.where(cookies["real_time.month"].isin([9, 10, 11]), "SON", None),
-            ),
+            xr.where(cookies["real_time.month"].isin([6, 7, 8]), "JJA", "SON"),
         ),
+    )
+    cookies = cookies.drop(
+        ["real_time", "t_rel_start", "t_rel_end", "t_rel_max", "cell_lifespan", "itime"]
     )
 
     return cookies
 
 
 def calculate_composite(cookies):
-    cookies = cookies.drop(
-        ["real_time", "t_rel_start", "t_rel_end", "t_rel_max", "cell_lifespan"]
-    )
     n_fields = cookies.groupby("season").count(dim="cookie_id").T
     n_cookies = cookies.groupby("season").count(dim="cookie_id").max_val
+
+    # todo: this should fix the problem with only having one season after .groupby, but it doesn't
+    # is not a problem, as long as all subdomains have cookies in at least two seasons.
+    # if "season" not in n_fields.dims:
+    #     n_fields = n_fields.expand_dims("season")
+    #     n_cookies = n_cookies.expand_dims("season")
 
     mean = cookies.groupby("season").mean(dim="cookie_id", skipna=True, keep_attrs=True)
     mean = mean.compute()
@@ -118,6 +120,15 @@ def calculate_composite(cookies):
     composite["n_cookies"].attrs = {"long_name": "number of cookies in composite"}
     composite["n_fields"] = n_fields
     composite["n_fields"].attrs = {"long_name": "number of fields in composite"}
+
+    seasons = ["DJF", "MAM", "JJA", "SON"]
+    # add empty nan filled composite if season not present
+    for season in seasons:
+        if season not in composite["season"].values:
+            dummy = xr.full_like(composite.isel(season=0), np.nan)
+            dummy["season"] = season
+            composite = xr.concat([composite, dummy], dim="season")
+
     return composite
 
 
