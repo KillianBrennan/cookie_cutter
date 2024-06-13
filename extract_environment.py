@@ -95,7 +95,7 @@ def main(trackdir, envdir, outpath, start_day, end_day, window_radius=30):
         times = [day + pd.Timedelta(hours=i) for i in range(24)]
 
         for now in times:
-            print(now)
+            # print(now)
             loaded = False
             for cell in cells:
                 if now in cell["datelist"]:
@@ -618,25 +618,25 @@ def domain_exiting_isel(env, bbox):
     # add nans for the part of the cookie that is outside of the domain to padd it to box_size
 
     if bbox[0] < 0:
-        print("exiting domain")
+        # print("exiting domain")
         for i in range(bbox_save[0] - bbox[0]):
             cookie = xr.concat(
                 [xr.full_like(cookie.isel(rlon=0), np.nan), cookie], dim="rlon"
             )
     if bbox[1] >= env.rlon.size:
-        print("exiting domain")
+        # print("exiting domain")
         for i in range(bbox[1] - bbox_save[1]):
             cookie = xr.concat(
                 [cookie, xr.full_like(cookie.isel(rlon=-1), np.nan)], dim="rlon"
             )
     if bbox[2] < 0:
-        print("exiting domain")
+        # print("exiting domain")
         for i in range(bbox_save[2] - bbox[2]):
             cookie = xr.concat(
                 [xr.full_like(cookie.isel(rlat=0), np.nan), cookie], dim="rlat"
             )
     if bbox[3] >= env.rlat.size:
-        print("exiting domain")
+        # print("exiting domain")
         for i in range(bbox[3] - bbox_save[3]):
             cookie = xr.concat(
                 [cookie, xr.full_like(cookie.isel(rlat=-1), np.nan)], dim="rlat"
