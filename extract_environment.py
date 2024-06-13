@@ -6,6 +6,13 @@
 extracts near cell environment
 loops through time instead of cells for efficiency
 one file per cell and timestep where it is active and environment is available
+filters only cells with lifespan > 60 minutes
+adds 30 minutes of genesis time to each cell (to aid in genesis analysis)
+rotates the cookie to have the mean cell propagation vector in the y direction
+mask disk around the cell center
+mask topography (values below surface pressure are masked)
+adds secondary variables (dewpoint, specific humidity, theta, theta e, vorticity, divergence)
+currently only cuts out 1hourly fields, 5min fields are used but only hourly
 ---------------------------------------------------------
 IN
 day to analyze (yyyymmdd)
@@ -20,12 +27,14 @@ gives one file per cell, named by day_id
 EXAMPLE CALL
 python extract_environment.py 20240412 /path/to/track /path/to/environment /path/to/output
 
-python /home/kbrennan/cookie_cutter/extract_environment.py /home/kbrennan/phd/data/climate/tracks/present /home/kbrennan/phd/data/climate/present /home/kbrennan/phd/data/climate/cookies/present 20210601 20210630
-
+python /home/kbrennan/cookie_cutter/extract_environment.py /home/kbrennan/phd/data/climate/tracks/present /home/kbrennan/phd/data/climate/present /home/kbrennan/phd/data/climate/cookies/present/test 20210601 20210630
+---------------------------------------------------------
+KNOWN ISSUES
+will throw some dask runtime warnings, these can be ignored
 ---------------------------------------------------------
 Killian P. Brennan
-02.05.2024
-version 0.1
+13.06.2024
+version 0.2
 ---------------------------------------------------------
 """
 
@@ -39,7 +48,25 @@ import metpy.calc as mpcalc
 from metpy.units import units
 
 
-def main(trackdir, envdir, outpath, start_day, end_day, window_radius=25):
+def main(trackdir, envdir, outpath, start_day, end_day, window_radius=30):
+    """
+    main function to extract the environment
+
+    Parameters
+    ----------
+    trackdir : str
+    path to the track location
+    envdir : str
+    path to the environment
+    outpath : str
+    path to output
+    start_day : str
+    start day, format: YYYYMMDD
+    end_day : str
+    end day, format: YYYYMMDD
+    window_radius : int
+    radius of the window to extract environment (gridpoints)
+    """
 
     start_day = pd.to_datetime(start_day, format="%Y%m%d")
     end_day = pd.to_datetime(end_day, format="%Y%m%d")
@@ -59,6 +86,8 @@ def main(trackdir, envdir, outpath, start_day, end_day, window_radius=25):
         cells = load_cells(trackdir, day_str)
 
         cells = filter(cells)
+
+        cells = [add_genesis(cell) for cell in cells]
 
         for cell in cells:
             cell["itime"] = 0
@@ -113,6 +142,9 @@ def main(trackdir, envdir, outpath, start_day, end_day, window_radius=25):
 
 
 def load_constants(envdir):
+    """
+    loads the constants file
+    """
     # load first file in directory that ends with *c.nc
     for file in os.listdir(envdir):
         if file.endswith("c.nc"):
@@ -129,6 +161,9 @@ def load_constants(envdir):
 
 
 def mask_topography(cookie):
+    """
+    masks values that lie below the topography (based on pressure level being higher than surface pressure)
+    """
     # mask 3d variables that are below the surface
 
     for key in cookie.keys():
@@ -143,6 +178,9 @@ def mask_topography(cookie):
 
 
 def write_cookie(cookie, outpath, cookie_id):
+    """
+    writes the cookie to a netcdf file
+    """
     comp = dict(zlib=True, complevel=9)
 
     # change all double variables to float
@@ -342,6 +380,13 @@ def add_secondary_variables(cookie):
 
 
 def add_attributes(cookie, cell, now):
+    """
+    adds attributes to the cookie
+    like information on the version of cookie creator / extract_environment.py
+    date of creation
+    information on the cell-centered coordinate system
+    and some cell event relative times
+    """
     # add information on the version of cookie creator / extract_environment.py
     cookie.attrs["cookie_creator"] = "extract_environment.py"
     cookie.attrs["cookie_creator_version"] = "0.1"
@@ -350,9 +395,10 @@ def add_attributes(cookie, cell, now):
     # date of creation
     cookie.attrs["creation_date"] = pd.Timestamp.now().strftime("%Y%m%d%H%M")
     # information on the cell-centered coordinate system
-    cookie.attrs["horizontal coordinate system"] = "x and y are relative to the cell center, x is aligned with storm motion, y is perpendicular to storm motion, positive x is in storm direction, positive y is to the left of the storm motion."
+    cookie.attrs["horizontal coordinate system"] = (
+        "x and y are relative to the cell center, y is aligned with storm motion, x is perpendicular to storm motion, positive y is in storm direction, positive x is to the left of the storm motion."
+    )
     cookie.attrs["vertical coordinate system"] = "pressure levels are in hPa"
-
 
     # add lat / lon of maximum intensity
     cookie["lon_max"] = cell["lon"][np.argmax(cell["max_val"])]
@@ -376,7 +422,7 @@ def add_attributes(cookie, cell, now):
 
     cookie["max_val"] = np.max(cell["max_val"])
     cookie["max_val"].attrs = {
-        "units": "mm/h",
+        "units": "mm",
         "long_name": "maximum intensity of the cell",
     }
     cookie["real_time"] = now
@@ -385,7 +431,7 @@ def add_attributes(cookie, cell, now):
     #     "long_name": "real time of the cookie timestep",
     # }
     # time in minutes relative to start of the cell
-    cookie["t_rel_start"] = (now - cell["datelist"][0]).seconds / 60
+    cookie["t_rel_start"] = (now - cell["start_date"]).seconds / 60
     cookie["t_rel_start"].attrs = {
         "units": "minutes",
         "long_name": "time in minutes relative to start of the cell",
@@ -418,6 +464,9 @@ def add_attributes(cookie, cell, now):
 
 
 def filter(cells, min_lifespan=60):
+    """
+    filters cells by lifespan
+    """
     # filter cells by lifespan
     cells = [cell for cell in cells if cell["lifespan"] > min_lifespan]
 
@@ -425,15 +474,21 @@ def filter(cells, min_lifespan=60):
 
 
 def mask_disk(cookie, radius_gp):
+    """
+    masks a disk around the cell center
+    """
     radius_km = radius_gp * 2.2
     masked = cookie.where(np.sqrt(cookie.x**2 + cookie.y**2) <= radius_km)
     return masked
 
 
 def rotate_cookie(cookie, cell):
-    "rotate cookie to have the mean cell propagation vector in the x direction"
+    """
+    rotates the cookie to have the mean cell propagation vector in the y direction
+    will also rotate the wind components
+    """
 
-    # get the cell propagation vector mean over lifetime, first has no movement vector
+    # get the cell propagation vector mean over lifetime, first has no movement vector (x and y components are flipped from the tracker...)
     u_storm = np.nanmean(cell["delta_y"][1::])
     v_storm = np.nanmean(cell["delta_x"][1::])
     # calculate the angle
@@ -452,13 +507,12 @@ def rotate_cookie(cookie, cell):
 
     cookie["U"].attrs = {
         "units": "m/s",
-        "long_name": "wind component aligned with storm motion, positive is in storm direction",    
+        "long_name": "wind component perpendicular to storm motion, positive is to the left of the storm motion",
     }
     cookie["V"].attrs = {
         "units": "m/s",
-        "long_name": "wind component perpendicular to storm motion, positive is to the left of the storm motion",    
+        "long_name": "wind component aligned with storm motion, positive is in storm direction",
     }
-
 
     # 10m wind components need to be rotated as well
     u = cookie["U_10M"]
@@ -468,17 +522,20 @@ def rotate_cookie(cookie, cell):
 
     cookie["U_10M"].attrs = {
         "units": "m/s",
-        "long_name": "10m wind component aligned with storm motion, positive is in storm direction",    
+        "long_name": "10m wind component perpendicular to storm motion, positive is to the left of the storm motion",
     }
     cookie["V_10M"].attrs = {
         "units": "m/s",
-        "long_name": "10m wind component perpendicular to storm motion, positive is to the left of the storm motion",    
+        "long_name": "10m wind component aligned with storm motion, positive is in storm direction",
     }
 
     return cookie
 
 
 def cutout_cookie(cell, env, now, window_radius=25):
+    """
+    cuts out the cookie around the cell center
+    """
     # find the index where now is
     i = cell["datelist"].index(now)
 
@@ -508,13 +565,14 @@ def cutout_cookie(cell, env, now, window_radius=25):
     cookie["y"] = np.arange(-window_radius, window_radius + 1) * 2.2
 
     cookie["x"].attrs = {
-        "units": "grid_points",
-        "long_name": "x coordinate relative to cell center, aligned with storm motion, positive x is in storm direction",
-        "forwards": "positive",
+        "units": "km",
+        "long_name": "x coordinate relative to cell center, aligned with storm motion, positive x is to the left of the storm motion",
+        "left": "positive",
     }
     cookie["y"].attrs = {
-        "units": "grid_points",
-        "long_name": "y coordinate relative to cell center, perpendicular to storm motion, positive y is to the left of the storm motion",
+        "units": "km",
+        "long_name": "y coordinate relative to cell center, perpendicular to storm motion, positive y is in storm direction",
+        "forwards": "positive",
     }
 
     cookie["rlat"] = xr.DataArray(rlat, dims="y")
@@ -542,7 +600,9 @@ def cutout_cookie(cell, env, now, window_radius=25):
 
 
 def domain_exiting_isel(env, bbox):
-    # like xr.isel but the bbox can be outside of the domain
+    """
+    like xr.isel but the bbox can be outside of the domain
+    """
     box_size = bbox[1] - bbox[0]
     bbox_save = bbox.copy()
     bbox_save[0] = max(0, bbox_save[0])
@@ -586,6 +646,9 @@ def domain_exiting_isel(env, bbox):
 
 
 def load_environments(envdir, now):
+    """
+    loads the environment for the given time
+    """
     env_1h_2D = xr.open_dataset(
         os.path.join(envdir, "1h_2D", f"lffd{now.strftime('%Y%m%d%H%M')}00.nc")
     )
@@ -637,6 +700,9 @@ def load_environments(envdir, now):
 
 
 def load_cells(trackdir, day):
+    """
+    loads the cells for the given day
+    """
     with open(os.path.join(trackdir, f"cell_tracks_{day}.json"), "r") as f:
         track_data = json.load(f)
 
@@ -646,6 +712,32 @@ def load_cells(trackdir, day):
         cell["datelist"] = list(pd.to_datetime(cell["datelist"]))
 
     return cells
+
+
+def add_genesis(cell, n_timesteps=6):
+    """
+    add n_timesteps number of timesteps backwards extrapolation to the cell to aid in investigating cell genesis
+    """
+    # calculate the mean propagation vector
+    u_storm = np.nanmean(cell["delta_x"][1::])
+    v_storm = np.nanmean(cell["delta_y"][1::])
+
+    cell["start_date"] = cell["datelist"][0]
+
+    for i in range(n_timesteps):
+        # add the genesis time to the datelist
+        cell["datelist"].insert(0, cell["datelist"][0] - pd.Timedelta(minutes=5))
+        # add the genesis position to the cell
+        cell["mass_center_x"].insert(0, cell["mass_center_x"][0] - u_storm)
+        cell["mass_center_y"].insert(0, cell["mass_center_y"][0] - v_storm)
+        # add the genesis delta_x and delta_y to the cell
+        cell["delta_x"].insert(0, u_storm)
+        cell["delta_y"].insert(0, v_storm)
+        cell["max_val"].insert(0, cell["max_val"][0])
+        cell["lat"].insert(0, cell["lat"][0])
+        cell["lon"].insert(0, cell["lon"][0])
+
+    return cell
 
 
 if __name__ == "__main__":

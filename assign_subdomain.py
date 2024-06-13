@@ -13,7 +13,7 @@ OUT
 ---------------------------------------------------------
 EXAMPLE CALL
 
-python /home/kbrennan/cookie_cutter/assign_subdomain.py /home/kbrennan/phd/data/climate/cookies/present /home/kbrennan/phd/data/climate/grids/subdomains_rot.nc
+python /home/kbrennan/cookie_cutter/assign_subdomain.py /home/kbrennan/phd/data/climate/cookies/present /home/kbrennan/phd/data/climate/grids/subdomains.nc
 
 ---------------------------------------------------------
 Killian P. Brennan
@@ -61,10 +61,11 @@ def main(cookie_dir, subdomain_dir):
             )
             if test == 1.0:
                 print(f"Assigning {f} to {dom}")
-                os.symlink(
-                    os.path.join(cookie_dir, f),
-                    os.path.join(cookie_dir, 'subdomains', dom, f),
-                )
+                if not os.path.exists(os.path.join(cookie_dir, 'subdomains', dom, f)):
+                    os.symlink(
+                        os.path.join(cookie_dir, f),
+                        os.path.join(cookie_dir, 'subdomains', dom, f),
+                    )
     return
 
 
