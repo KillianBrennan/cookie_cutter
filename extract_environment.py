@@ -31,12 +31,15 @@ version 0.1
 
 import os
 import json
+from netCDF4 import Dataset
 import xarray as xr
+import h5py
 import numpy as np
 import pandas as pd
 from argparse import ArgumentParser
 import metpy.calc as mpcalc
 from metpy.units import units
+import time
 
 
 def main(trackdir, envdir, outpath, start_day, end_day, window_radius=25):
@@ -66,7 +69,7 @@ def main(trackdir, envdir, outpath, start_day, end_day, window_radius=25):
         times = [day + pd.Timedelta(hours=i) for i in range(24)]
 
         for now in times:
-            print(now)
+            # print(now)
             loaded = False
             for cell in cells:
                 if now in cell["datelist"]:
@@ -116,7 +119,17 @@ def load_constants(envdir):
     # load first file in directory that ends with *c.nc
     for file in os.listdir(envdir):
         if file.endswith("c.nc"):
-            const = xr.open_dataset(os.path.join(envdir, file))
+            # try to load the file, if it fails, try again after waiting for 1 second (try this 20 times)
+            # this is neccecary, because if we are running this script in parallel, the files might not be available as they are being read by another process (not sure why this is a problem in the first place...)
+            for i in range(30):
+                try:
+                    const = xr.open_dataset(os.path.join(envdir, file))
+                except:
+                    # print(f"Failed to load {file}. Trying again in 1 second.")
+                    time.sleep(1)
+                    continue
+                break
+
             break
 
     # only keep variables in list
@@ -558,25 +571,25 @@ def domain_exiting_isel(env, bbox):
     # add nans for the part of the cookie that is outside of the domain to padd it to box_size
 
     if bbox[0] < 0:
-        print("exiting domain")
+        # print("exiting domain")
         for i in range(bbox_save[0] - bbox[0]):
             cookie = xr.concat(
                 [xr.full_like(cookie.isel(rlon=0), np.nan), cookie], dim="rlon"
             )
     if bbox[1] >= env.rlon.size:
-        print("exiting domain")
+        # print("exiting domain")
         for i in range(bbox[1] - bbox_save[1]):
             cookie = xr.concat(
                 [cookie, xr.full_like(cookie.isel(rlon=-1), np.nan)], dim="rlon"
             )
     if bbox[2] < 0:
-        print("exiting domain")
+        # print("exiting domain")
         for i in range(bbox_save[2] - bbox[2]):
             cookie = xr.concat(
                 [xr.full_like(cookie.isel(rlat=0), np.nan), cookie], dim="rlat"
             )
     if bbox[3] >= env.rlat.size:
-        print("exiting domain")
+        # print("exiting domain")
         for i in range(bbox[3] - bbox_save[3]):
             cookie = xr.concat(
                 [cookie, xr.full_like(cookie.isel(rlat=-1), np.nan)], dim="rlat"
