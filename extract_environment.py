@@ -350,7 +350,7 @@ def add_attributes(cookie, cell, now):
     # date of creation
     cookie.attrs["creation_date"] = pd.Timestamp.now().strftime("%Y%m%d%H%M")
     # information on the cell-centered coordinate system
-    cookie.attrs["horizontal coordinate system"] = "x and y are relative to the cell center, x is aligned with storm motion, y is perpendicular to storm motion, positive x is in storm direction, positive y is to the left of the storm motion."
+    cookie.attrs["horizontal coordinate system"] = "x and y are relative to the cell center, y is aligned with storm motion, x is perpendicular to storm motion, positive y is in storm direction, positive x is to the left of the storm motion."
     cookie.attrs["vertical coordinate system"] = "pressure levels are in hPa"
 
 
@@ -376,7 +376,7 @@ def add_attributes(cookie, cell, now):
 
     cookie["max_val"] = np.max(cell["max_val"])
     cookie["max_val"].attrs = {
-        "units": "mm/h",
+        "units": "mm",
         "long_name": "maximum intensity of the cell",
     }
     cookie["real_time"] = now
@@ -431,7 +431,7 @@ def mask_disk(cookie, radius_gp):
 
 
 def rotate_cookie(cookie, cell):
-    "rotate cookie to have the mean cell propagation vector in the x direction"
+    "rotate cookie to have the mean cell propagation vector in the y direction"
 
     # get the cell propagation vector mean over lifetime, first has no movement vector
     u_storm = np.nanmean(cell["delta_y"][1::])
@@ -452,11 +452,11 @@ def rotate_cookie(cookie, cell):
 
     cookie["U"].attrs = {
         "units": "m/s",
-        "long_name": "wind component aligned with storm motion, positive is in storm direction",    
+        "long_name": "wind component perpendicular to storm motion, positive is to the left of the storm motion",    
     }
     cookie["V"].attrs = {
         "units": "m/s",
-        "long_name": "wind component perpendicular to storm motion, positive is to the left of the storm motion",    
+        "long_name": "wind component aligned with storm motion, positive is in storm direction",    
     }
 
 
@@ -468,11 +468,11 @@ def rotate_cookie(cookie, cell):
 
     cookie["U_10M"].attrs = {
         "units": "m/s",
-        "long_name": "10m wind component aligned with storm motion, positive is in storm direction",    
+        "long_name": "10m wind component perpendicular to storm motion, positive is to the left of the storm motion",    
     }
     cookie["V_10M"].attrs = {
         "units": "m/s",
-        "long_name": "10m wind component perpendicular to storm motion, positive is to the left of the storm motion",    
+        "long_name": "10m wind component aligned with storm motion, positive is in storm direction",    
     }
 
     return cookie
@@ -508,13 +508,14 @@ def cutout_cookie(cell, env, now, window_radius=25):
     cookie["y"] = np.arange(-window_radius, window_radius + 1) * 2.2
 
     cookie["x"].attrs = {
-        "units": "grid_points",
-        "long_name": "x coordinate relative to cell center, aligned with storm motion, positive x is in storm direction",
-        "forwards": "positive",
+        "units": "km",
+        "long_name": "x coordinate relative to cell center, aligned with storm motion, positive x is to the left of the storm motion",
+        'left': 'positive'
     }
     cookie["y"].attrs = {
-        "units": "grid_points",
-        "long_name": "y coordinate relative to cell center, perpendicular to storm motion, positive y is to the left of the storm motion",
+        "units": "km",
+        "long_name": "y coordinate relative to cell center, perpendicular to storm motion, positive y is in storm direction",
+        "forwards": "positive",
     }
 
     cookie["rlat"] = xr.DataArray(rlat, dims="y")

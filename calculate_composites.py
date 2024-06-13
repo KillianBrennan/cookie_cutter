@@ -12,9 +12,21 @@ OUT
 
 ---------------------------------------------------------
 EXAMPLE CALL
+python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/future /home/kbrennan/phd/data/climate/cookies/future/comp_n0.3 --filter_n 0.3
 
-python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/future --filter_lifetime 150 --filter_w 25
+python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/present /home/kbrennan/phd/data/climate/cookies/present/comp_n0.3 --filter_n 0.3
+---
+python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/future /home/kbrennan/phd/data/climate/cookies/future/comp_p --filter_quantile 0.9
 
+python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/present /home/kbrennan/phd/data/climate/cookies/present/comp_p --filter_quantile 0.9
+--
+python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/future /home/kbrennan/phd/data/climate/cookies/future/comp_f --filter_lifetime 150 --filter_w 25
+
+python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/present /home/kbrennan/phd/data/climate/cookies/present/comp_f --filter_lifetime 150 --filter_w 25
+--
+python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/future /home/kbrennan/phd/data/climate/cookies/future/comp
+
+python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/present /home/kbrennan/phd/data/climate/cookies/present/comp
 ---------------------------------------------------------
 Killian P. Brennan
 08.05.2024
@@ -33,9 +45,15 @@ import multiprocessing as mp
 
 
 def main(
-    cookie_dir, filter_lifetime=None, filter_diameter=None, filter_w=None, backend="cdo"
+    cookie_dir,
+    composite_dir,
+    filter_lifetime=None,
+    filter_diameter=None,
+    filter_w=None,
+    filter_quantile=None,
+    filter_n=None,
+    backend="cdo",
 ):
-    composite_dir = os.path.join(cookie_dir, "composites_filtered")
     os.makedirs(composite_dir, exist_ok=True)
     # # remove existing composites
     # for f in os.listdir(composite_dir):
@@ -48,8 +66,8 @@ def main(
     subdomains = [
         sub for sub in subdomains if os.path.isdir(os.path.join(subdomains_dir, sub))
     ]
-    do_calculations_cdo(cookie_dir, composite_dir, "BI")
-
+    # do_calculations_cdo(cookie_dir, composite_dir, "BI", filter_lifetime, filter_diameter, filter_w)
+    # exit()
     print("subdomains", subdomains)
     # do calculations for subdomains in parallel
     with mp.Pool(len(subdomains)) as pool:
@@ -64,6 +82,8 @@ def main(
                         filter_lifetime,
                         filter_diameter,
                         filter_w,
+                        filter_quantile,
+                        filter_n,
                     )
                     for dom in subdomains
                 ],
@@ -86,55 +106,200 @@ def do_calculations_cdo(
     filter_lifetime=None,
     filter_diameter=None,
     filter_w=None,
+    filter_quantile=None,
+    filter_n=None,
 ):
-    subdomains_dir = os.path.join(cookie_dir, "subdomains")
 
-    # mean
-    writedir = construct_writedir(
-        composite_dir, dom, filter_lifetime, filter_diameter, stat="mean"
-    )
-    cdo_command = (
-        f"cdo ensmean {os.path.join(subdomains_dir, dom, 'cookie_*.nc')} {writedir}"
-    )
-    # std
-    writedir = construct_writedir(
-        composite_dir, dom, filter_lifetime, filter_diameter, stat="std"
-    )
-    cdo_command = (
-        f"cdo ensstd {os.path.join(subdomains_dir, dom, 'cookie_*.nc')} {writedir}"
-    )
-    # q90
-    writedir = construct_writedir(
-        composite_dir, dom, filter_lifetime, filter_diameter, stat="q90"
-    )
-    cdo_command = (
-        f"cdo enspctl,90 {os.path.join(subdomains_dir, dom, 'cookie_*.nc')} {writedir}"
-    )
+    seasons = ["DJF", "MAM", "JJA", "SON",'YEAR']
+    # seasons = ['YEAR']
+    months = {
+        "DJF": "12,01,02",
+        "MAM": "03,04,05",
+        "JJA": "06,07,08",
+        "SON": "09,10,11",
+        "YEAR": "01,02,03,04,05,06,07,08,09,10,11,12",
+    }
 
-    os.system(cdo_command)
+    all_cookies = os.listdir(os.path.join(cookie_dir, "subdomains", dom))
+    all_cookies = filter_cookies_cdo(
+        all_cookies,
+        cookie_dir,
+        dom,
+        filter_lifetime,
+        filter_diameter,
+        filter_w,
+        filter_quantile,
+        filter_n,
+    )
+    for season in seasons:
+        # cookies that are in the format cookie_YYYYMM*
+        cookies_in_season = [c for c in all_cookies if c[11:13] in months[season]]
+        cookies_in_season = [
+            os.path.join(cookie_dir, "subdomains", dom, c) for c in cookies_in_season
+        ]
+
+        # make temporary directory for cdo
+        temp_dir = os.path.join(composite_dir, "temp_" + dom + "_" + season)
+        os.makedirs(temp_dir, exist_ok=True)
+        # link cookies_in_season to temp_dir
+        for c in cookies_in_season:
+            os.symlink(c, os.path.join(temp_dir, os.path.basename(c)))
+        # mean
+        writedir = construct_writedir(
+            composite_dir,
+            dom,
+            filter_lifetime,
+            filter_diameter,
+            filter_w,
+            filter_quantile,
+            filter_n,
+            stat="mean",
+            season=season,
+            n_cookies=len(cookies_in_season),
+        )
+        cdo_command = f"cdo -w -O ensmean {temp_dir}/* {writedir}"
+        # print(cdo_command)
+        os.system(cdo_command)
+        print(dom, season, len(cookies_in_season))
+        # std
+        writedir = construct_writedir(
+            composite_dir,
+            dom,
+            filter_lifetime,
+            filter_diameter,
+            filter_w,
+            filter_quantile,
+            filter_n,
+            stat="std",
+            season=season,
+            n_cookies=len(cookies_in_season),
+        )
+        cdo_command = f"cdo -w -O ensstd {' '.join(cookies_in_season)} {writedir}"
+        os.system(cdo_command)
+
+        # q25
+        writedir = construct_writedir(
+            composite_dir,
+            dom,
+            filter_lifetime,
+            filter_diameter,
+            filter_w,
+            filter_quantile,
+            filter_n,
+            stat="q25",
+            season=season,
+            n_cookies=len(cookies_in_season),
+        )
+        cdo_command = f"cdo -w -O enspctl,25 {' '.join(cookies_in_season)} {writedir}"
+        os.system(cdo_command)
+
+        # q75
+        writedir = construct_writedir(
+            composite_dir,
+            dom,
+            filter_lifetime,
+            filter_diameter,
+            filter_w,
+            filter_quantile,
+            filter_n,
+            stat="q75",
+            season=season,
+            n_cookies=len(cookies_in_season),
+        )
+        cdo_command = f"cdo -w -O enspctl,75 {' '.join(cookies_in_season)} {writedir}"
+        os.system(cdo_command)
+
+        # median
+        writedir = construct_writedir(
+            composite_dir,
+            dom,
+            filter_lifetime,
+            filter_diameter,
+            filter_w,
+            filter_quantile,
+            filter_n,
+            stat="median",
+            season=season,
+            n_cookies=len(cookies_in_season),
+        )
+        cdo_command = f"cdo -w -O enspctl,50 {' '.join(cookies_in_season)} {writedir}"
+        os.system(cdo_command)
+
+        # # q90
+        # writedir = construct_writedir(
+        #     composite_dir,
+        #     dom,
+        #     filter_lifetime,
+        #     filter_diameter,
+        #     filter_w,
+        #     filter_quantile,
+        #     filter_n,
+        #     stat="q90",
+        #     season=season,
+        #     n_cookies=len(cookies_in_season),
+        # )
+        # cdo_command = f"cdo -w -O enspctl,90 {' '.join(cookies_in_season)} {writedir}"
+        # os.system(cdo_command)
+
+        # remove temp_dir
+        for c in cookies_in_season:
+            os.remove(os.path.join(temp_dir, os.path.basename(c)))
+        os.rmdir(temp_dir)
 
     return
 
 
-def do_calculations(
+def filter_cookies_cdo(
+    cookies_files,
     cookie_dir,
-    composite_dir,
     dom,
     filter_lifetime=None,
     filter_diameter=None,
     filter_w=None,
+    filter_quantile=None,
+    filter_n=None,
 ):
-    subdomains_dir = os.path.join(cookie_dir, "subdomains")
-    cookies = load_cookies(os.path.join(subdomains_dir, dom))
-    cookies = filter_cookies(cookies, filter_lifetime, filter_diameter)
-    composite = calculate_composite(cookies)
-    composite = composite.expand_dims({"domain": [dom]})
-    writedir = construct_writedir(
-        composite_dir, dom, filter_lifetime, filter_diameter, stat="comp"
+    cookie_directories = [os.path.join(cookie_dir, c) for c in cookies_files]
+    # load all cookies
+    cookies = xr.open_mfdataset(
+        cookie_directories,
+        combine="by_coords",
     )
-    composite.to_netcdf(writedir)
-    print(f"finished composite for {dom}")
-    return
+    cookies = filter_cookies(
+        cookies,
+        dom,
+        filter_lifetime,
+        filter_diameter,
+        filter_w,
+        filter_quantile,
+        filter_n,
+    )
+
+    cookie_ids = cookies["cookie_id"].values
+    cookies_files = [f"cookie_{c}.nc" for c in cookie_ids]
+
+    return cookies_files
+
+
+# def do_calculations(
+#     cookie_dir,
+#     composite_dir,
+#     dom,
+#     filter_lifetime=None,
+#     filter_diameter=None,
+#     filter_w=None,
+# ):
+#     subdomains_dir = os.path.join(cookie_dir, "subdomains")
+#     cookies = load_cookies(os.path.join(subdomains_dir, dom))
+#     cookies = filter_cookies(cookies, filter_lifetime, filter_diameter)
+#     composite = calculate_composite(cookies)
+#     composite = composite.expand_dims({"domain": [dom]})
+#     writedir = construct_writedir(
+#         composite_dir, dom, filter_lifetime, filter_diameter, stat="comp"
+#     )
+#     composite.to_netcdf(writedir)
+#     print(f"finished composite for {dom}")
+#     return
 
 
 def construct_writedir(
@@ -143,7 +308,11 @@ def construct_writedir(
     filter_lifetime=None,
     filter_diameter=None,
     filter_w=None,
+    filter_quantile=None,
+    filter_n=None,
     stat=None,
+    season=None,
+    n_cookies=None,
 ):
     filter_str = ""
     if filter_lifetime is not None:
@@ -152,23 +321,68 @@ def construct_writedir(
         filter_str += f"_max_val{filter_diameter}"
     if filter_w is not None:
         filter_str += f"_w{filter_w}"
-    stat = "_" + stat if stat else ""
-    writedir = os.path.join(composite_dir, dom + filter_str + stat + ".nc")
+    if filter_quantile is not None:
+        filter_str += f"_q{filter_quantile}"
+    if filter_n is not None:
+        filter_str += f"_n{filter_n}"
+    if stat is None:
+        stat_str = "_comp"
+    else:
+        stat_str = "_" + stat
+    if season is None:
+        season_str = ""
+    else:
+        season_str = "_" + season
+    if n_cookies is None:
+        n_cookies_str = ""
+    else:
+        n_cookies_str = "_n" + str(n_cookies)
+
+    writedir = os.path.join(
+        composite_dir, dom + season_str + filter_str + stat_str + n_cookies_str + ".nc"
+    )
     return writedir
 
 
-def filter_cookies(cookies, filter_lifetime=None, filter_diameter=None, filter_w=None):
+def filter_cookies(
+    cookies,
+    dom,
+    filter_lifetime=None,
+    filter_diameter=None,
+    filter_w=None,
+    filter_quantile=None,
+    filter_n=None,
+):
     if filter_lifetime is not None:
         cookies = cookies.where(
-            cookies["cell_lifespan"] >= np.timedelta64(filter_lifetime, "min"),
+            cookies["cell_lifespan"] >= np.timedelta64(filter_lifetime, "m"),
             drop=True,
         )
     if filter_diameter is not None:
         cookies = cookies.where(cookies["max_val"] >= filter_diameter, drop=True)
     if filter_w is not None:
         cookies = cookies.where(
-            cookies.sel(presssure=400).W.max() >= filter_w, drop=True
+            cookies.sel(pressure=400).W.max(dim=["x", "y"]) >= filter_w, drop=True
         )
+    if filter_quantile is not None:
+        threshold = np.nanquantile(
+            cookies.sel(pressure=400).W.max(dim=["x", "y"]).values, filter_quantile
+        )
+        cookies = cookies.where(
+            cookies.sel(pressure=400).W.max(dim=["x", "y"]) >= threshold, drop=True
+        )
+    if filter_n is not None:
+        # only use the n/1000km^2 per year cookies with the largest hail diameter
+        subdomains = xr.open_dataset(
+            "/home/kbrennan/phd/data/climate/grids/subdomains.nc"
+        )
+        dom_area = np.round(np.nansum(subdomains[dom] == 1) * 2.2**2)
+        n_cookies = int(dom_area / 1000 * filter_n)
+
+        # select the n cookies with the largest max hail diameter (max of DHAIL_MX variable)
+        cookies["sort_val"] = cookies.DHAIL_MX.max(dim=["x", "y"])
+        cookies = cookies.sortby("sort_val", ascending=False)
+        cookies = cookies.isel(cookie_id=slice(0, n_cookies))
     return cookies
 
 
@@ -257,6 +471,8 @@ def calculate_composite(cookies):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Calculate composites from cookies")
     parser.add_argument("cookie_dir", type=str, help="Directory containing cookies")
+    parser.add_argument("composite_dir", type=str, help="Directory to save composites")
+
     parser.add_argument(
         "--filter_lifetime",
         type=int,
@@ -276,6 +492,18 @@ if __name__ == "__main__":
         help="Filter out cookies with a maximum updraft velocity less than this value (m/s)",
     )
     parser.add_argument(
+        "--filter_quantile",
+        type=float,
+        default=None,
+        help="Filter out cookies with a maximum updraft velocity less than this quantile value",
+    )
+    parser.add_argument(
+        "--filter_n",
+        type=float,
+        default=None,
+        help="only use the n/1000km^2 per year cookies with the largest hail diameter",
+    )
+    parser.add_argument(
         "--backend",
         type=str,
         default="cdo",
@@ -285,8 +513,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     main(
         args.cookie_dir,
+        args.composite_dir,
         args.filter_lifetime,
         args.filter_diameter,
         args.filter_w,
+        args.filter_quantile,
+        args.filter_n,
         args.backend,
     )
