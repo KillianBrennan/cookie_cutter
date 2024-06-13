@@ -110,7 +110,7 @@ def do_calculations_cdo(
     filter_n=None,
 ):
 
-    seasons = ["DJF", "MAM", "JJA", "SON",'YEAR']
+    seasons = ["DJF", "MAM", "JJA", "SON", "YEAR"]
     # seasons = ['YEAR']
     months = {
         "DJF": "12,01,02",
