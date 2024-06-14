@@ -34,7 +34,7 @@ will throw some dask runtime warnings, these can be ignored
 ---------------------------------------------------------
 Killian P. Brennan
 13.06.2024
-version 0.2
+version 0.2 
 ---------------------------------------------------------
 """
 
@@ -566,12 +566,12 @@ def cutout_cookie(cell, env, now, window_radius=25):
 
     cookie["x"].attrs = {
         "units": "km",
-        "long_name": "x coordinate relative to cell center, aligned with storm motion, positive x is to the left of the storm motion",
+        "long_name": "x coordinate relative to cell center, perpendicular to storm motion, positive x is to the left of the storm motion",
         "left": "positive",
     }
     cookie["y"].attrs = {
         "units": "km",
-        "long_name": "y coordinate relative to cell center, perpendicular to storm motion, positive y is in storm direction",
+        "long_name": "y coordinate relative to cell center, aligned with storm motion, positive y is in storm direction",
         "forwards": "positive",
     }
 
