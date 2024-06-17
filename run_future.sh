@@ -15,4 +15,4 @@
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export CRAY_CUDA_MPS=1
 
-srun -A pr133 -C gpu cut_future.sh
+srun --time=24:00:00 -A pr133 -C gpu cut_future.sh
