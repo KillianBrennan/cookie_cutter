@@ -431,7 +431,11 @@ def add_attributes(cookie, cell, now):
     #     "long_name": "real time of the cookie timestep",
     # }
     # time in minutes relative to start of the cell
-    cookie["t_rel_start"] = (now - cell["start_date"]).seconds / 60
+    t_start = cell["start_date"]
+    if t_start < now:
+        cookie["t_rel_start"] = (now - t_start).seconds / 60
+    else:
+        cookie["t_rel_start"] = -(t_start - now).seconds / 60
     cookie["t_rel_start"].attrs = {
         "units": "minutes",
         "long_name": "time in minutes relative to start of the cell",
