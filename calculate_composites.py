@@ -383,6 +383,9 @@ def filter_cookies(
         cookies["sort_val"] = cookies.DHAIL_MX.max(dim=["x", "y"])
         cookies = cookies.sortby("sort_val", ascending=False)
         cookies = cookies.isel(cookie_id=slice(0, n_cookies))
+
+    # only keep cookies after start of cell (filter out genesis cookies)
+    cookies = cookies.where(cookies.t_rel_start >= 0, drop=True)
     return cookies
 
 
