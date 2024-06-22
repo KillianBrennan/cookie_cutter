@@ -44,7 +44,7 @@ def cut_year_present(year):
 
 def cut_year_future(year):
     envdir = '/project/pr133/irist/scClim/RUN_2km_cosmo6_climate_PGW_MPI_HR/output/lm_f/'
-    trackdir = '/store/c2sm/scclim/climate_simulations/PGW_MPI_HR/hail_tracks/filtered'
+    trackdir = '/store/c2sm/scclim/climate_simulations/PGW_MPI_HR/hail_tracks'
     outpath = '/users/kbrennan/scratch/cookies/future'
 
     ee.main(trackdir, envdir, outpath, str(year)+'0101', str(year+1)+'0101')

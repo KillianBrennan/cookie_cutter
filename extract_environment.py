@@ -754,7 +754,7 @@ if __name__ == "__main__":
     p.add_argument(
         "--window_radius",
         type=int,
-        default=25,
+        default=30,
         help="radius of the window to extract environment",
     )
 
