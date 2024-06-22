@@ -12,9 +12,9 @@ OUT
 
 ---------------------------------------------------------
 EXAMPLE CALL
-python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/future /home/kbrennan/phd/data/climate/cookies/future/comp_n0.3 --filter_n 0.3
+python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/future /home/kbrennan/phd/data/climate/cookies/future/comp_n0.5 --filter_n 0.5
 
-python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/present /home/kbrennan/phd/data/climate/cookies/present/comp_n0.3 --filter_n 0.3
+python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/present /home/kbrennan/phd/data/climate/cookies/present/comp_n0.5 --filter_n 0.5
 ---
 python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/future /home/kbrennan/phd/data/climate/cookies/future/comp_p --filter_quantile 0.9
 
@@ -60,6 +60,12 @@ def main(
     #     os.remove(os.path.join(composite_dir, f))
 
     subdomains_dir = os.path.join(cookie_dir, "subdomains")
+
+    if not os.path.exists(subdomains_dir):
+        print(
+            f"subdomains directory {subdomains_dir} does not exist, did you run assign_subdomains.py?"
+        )
+        sys.exit()
 
     subdomains = os.listdir(subdomains_dir)
     # must be directories
@@ -385,7 +391,9 @@ def filter_cookies(
         cookies = cookies.isel(cookie_id=slice(0, n_cookies))
 
     # only keep cookies after start of cell (filter out genesis cookies)
-    cookies = cookies.where(cookies.t_rel_start >= 0, drop=True)
+    cookies = cookies.where(
+        cookies.t_rel_start.astype('timedelta64[m]').astype(int) >= 0, drop=True
+    )
     return cookies
 
 
