@@ -144,12 +144,162 @@ def do_calculations_cdo(
             os.path.join(cookie_dir, "subdomains", dom, c) for c in cookies_in_season
         ]
 
-        # make temporary directory for cdo
+        # make temporary directory
         temp_dir = os.path.join(composite_dir, "temp_" + dom + "_" + season)
         os.makedirs(temp_dir, exist_ok=True)
+
+        # ---------------------------------------------------------
+        # calculate bootstrap composites
+        # ---------------------------------------------------------
+        # resample 100 times with replacement and calculate the mean
+        # from those means calculate mean, std, q25, q75, median, q99 q01 for each variable
+        
+        # make temporary directory for the bootstrapped means
+        temp_dir_boot = os.path.join(temp_dir, "boot")
+        os.makedirs(temp_dir_boot, exist_ok=True)
+        # make temporary directory for the resampled cookies
+        temp_dir_resampled = os.path.join(temp_dir, "resampled")
+        os.makedirs(temp_dir_resampled, exist_ok=True)
+
+        # calculate bootstrapped means
+        for i in range(100):
+            # resample with replacement
+            resampled_cookies = np.random.choice(cookies_in_season, len(cookies_in_season), replace=True)
+            # link resampled cookies to temp_dir_resampled (add str(j) to allow for dublicate samples)
+            for j,c in enumerate(resampled_cookies):
+                os.symlink(c, os.path.join(temp_dir_resampled, os.path.basename(c).split(".")[0] + f"_{j}.nc"))
+            # calculate mean
+            cdo_command = f"cdo -w -O ensmean {temp_dir_resampled}/* {temp_dir_boot}/boot_{i}.nc"
+            os.system(cdo_command)
+            # remove resampled cookies
+            for c in os.listdir(temp_dir_resampled):
+                os.remove(os.path.join(temp_dir_resampled, c))
+        # calculate mean, std, q25, q75, median, q99, q01 from bootstrapped means
+        # mean
+        writedir = construct_writedir(
+            composite_dir,
+            dom,
+            filter_lifetime,
+            filter_diameter,
+            filter_w,
+            filter_quantile,
+            filter_n,
+            stat="boot_mean",
+            season=season,
+            n_cookies=len(cookies_in_season),
+        )
+        cdo_command = f"cdo -w -O ensmean {temp_dir_boot}/* {writedir}"
+        os.system(cdo_command)
+
+        # std
+        writedir = construct_writedir(
+            composite_dir,
+            dom,
+            filter_lifetime,
+            filter_diameter,
+            filter_w,
+            filter_quantile,
+            filter_n,
+            stat="boot_std",
+            season=season,
+            n_cookies=len(cookies_in_season),
+        )
+        cdo_command = f"cdo -w -O ensstd {temp_dir_boot}/* {writedir}"
+        os.system(cdo_command)
+
+        # # q25
+        # writedir = construct_writedir(
+        #     composite_dir,
+        #     dom,
+        #     filter_lifetime,
+        #     filter_diameter,
+        #     filter_w,
+        #     filter_quantile,
+        #     filter_n,
+        #     stat="boot_q25",
+        #     season=season,
+        #     n_cookies=len(cookies_in_season),
+        # )
+        # cdo_command = f"cdo -w -O enspctl,25 {temp_dir_boot}/* {writedir}"
+        # os.system(cdo_command)
+
+        # # q75
+        # writedir = construct_writedir(
+        #     composite_dir,
+        #     dom,
+        #     filter_lifetime,
+        #     filter_diameter,
+        #     filter_w,
+        #     filter_quantile,
+        #     filter_n,
+        #     stat="boot_q75",
+        #     season=season,
+        #     n_cookies=len(cookies_in_season),
+        # )
+        # cdo_command = f"cdo -w -O enspctl,75 {temp_dir_boot}/* {writedir}"
+        # os.system(cdo_command)
+
+        # # median
+        # writedir = construct_writedir(
+        #     composite_dir,
+        #     dom,
+        #     filter_lifetime,
+        #     filter_diameter,
+        #     filter_w,
+        #     filter_quantile,
+        #     filter_n,
+        #     stat="boot_median",
+        #     season=season,
+        #     n_cookies=len(cookies_in_season),
+        # )
+        # cdo_command = f"cdo -w -O enspctl,50 {temp_dir_boot}/* {writedir}"
+        # os.system(cdo_command)
+
+        # q99
+        writedir = construct_writedir(
+            composite_dir,
+            dom,
+            filter_lifetime,
+            filter_diameter,
+            filter_w,
+            filter_quantile,
+            filter_n,
+            stat="boot_q99",
+            season=season,
+            n_cookies=len(cookies_in_season),
+        )
+        cdo_command = f"cdo -w -O enspctl,99 {temp_dir_boot}/* {writedir}"
+        os.system(cdo_command)
+        # q01
+        writedir = construct_writedir(
+            composite_dir,
+            dom,
+            filter_lifetime,
+            filter_diameter,
+            filter_w,
+            filter_quantile,
+            filter_n,
+            stat="boot_q01",
+            season=season,
+            n_cookies=len(cookies_in_season),
+        )
+        cdo_command = f"cdo -w -O enspctl,1 {temp_dir_boot}/* {writedir}"
+        os.system(cdo_command)
+
+        # remove temp_dir_boot
+        for c in os.listdir(temp_dir_boot):
+            os.remove(os.path.join(temp_dir_boot, c))
+        os.rmdir(temp_dir_boot)
+        os.rmdir(temp_dir_resampled)
+
+
+        # ---------------------------------------------------------
+        # calculate straight mean, std, q25, q75, median, q90, q10 from original cookies
+        # ---------------------------------------------------------
         # link cookies_in_season to temp_dir
         for c in cookies_in_season:
             os.symlink(c, os.path.join(temp_dir, os.path.basename(c)))
+            
         # mean
         writedir = construct_writedir(
             composite_dir,
@@ -167,6 +317,7 @@ def do_calculations_cdo(
         # print(cdo_command)
         os.system(cdo_command)
         print(dom, season, len(cookies_in_season))
+
         # std
         writedir = construct_writedir(
             composite_dir,
@@ -248,8 +399,8 @@ def do_calculations_cdo(
         # os.system(cdo_command)
 
         # remove temp_dir
-        for c in cookies_in_season:
-            os.remove(os.path.join(temp_dir, os.path.basename(c)))
+        for c in os.listdir(temp_dir):
+            os.remove(os.path.join(temp_dir, c))
         os.rmdir(temp_dir)
 
     return
