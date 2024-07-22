@@ -13,7 +13,9 @@ OUT
 ---------------------------------------------------------
 EXAMPLE CALL
 
-python /home/kbrennan/cookie_cutter/assign_subdomain.py /home/kbrennan/phd/data/climate/cookies/present /home/kbrennan/phd/data/climate/grids/subdomains.nc
+python /home/kbrennan/cookie_cutter/assign_subdomain.py /home/kbrennan/phd/data/climate/cookies/present /home/kbrennan/phd/data/climate/grids/subdomains_lonlat.nc
+
+python /home/kbrennan/cookie_cutter/assign_subdomain.py /home/kbrennan/phd/data/climate/cookies/future /home/kbrennan/phd/data/climate/grids/subdomains_lonlat.nc
 
 ---------------------------------------------------------
 Killian P. Brennan
@@ -34,6 +36,8 @@ def main(cookie_dir, subdomain_dir):
 
     os.makedirs(os.path.join(cookie_dir,'subdomains'), exist_ok=True)
     keys = list(subdomains.keys())
+    # add "all" to the list of keys
+    # keys.append("all")
     for k in keys:
         os.makedirs(os.path.join(cookie_dir,'subdomains', k), exist_ok=True)
 
@@ -66,6 +70,12 @@ def main(cookie_dir, subdomain_dir):
                         os.path.join(cookie_dir, f),
                         os.path.join(cookie_dir, 'subdomains', dom, f),
                     )
+        # assign all cookies to subdomain "all"
+        # os.symlink(
+        #     os.path.join(cookie_dir, f),
+        #     os.path.join(cookie_dir, 'subdomains', "all", f),
+        # )
+
     return
 
 

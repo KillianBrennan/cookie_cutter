@@ -12,21 +12,21 @@ OUT
 
 ---------------------------------------------------------
 EXAMPLE CALL
-python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/future /home/kbrennan/phd/data/climate/cookies/future/comp_n0.5 --filter_n 0.5
+python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/future /home/kbrennan/phd/data/climate/grids/subdomains_lonlat.nc /home/kbrennan/phd/data/climate/composites/future/comp_n0.5 --filter_n 0.5
 
-python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/present /home/kbrennan/phd/data/climate/cookies/present/comp_n0.5 --filter_n 0.5
+python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/present /home/kbrennan/phd/data/climate/grids/subdomains_lonlat.nc /home/kbrennan/phd/data/climate/composites/present/comp_n0.5 --filter_n 0.5
 ---
-python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/future /home/kbrennan/phd/data/climate/cookies/future/comp_p --filter_quantile 0.9
+python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/future /home/kbrennan/phd/data/climate/grids/subdomains_lonlat.nc /home/kbrennan/phd/data/climate/composites/future/comp_p --filter_quantile 0.9
 
-python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/present /home/kbrennan/phd/data/climate/cookies/present/comp_p --filter_quantile 0.9
+python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/present /home/kbrennan/phd/data/climate/grids/subdomains_lonlat.nc /home/kbrennan/phd/data/climate/composites/present/comp_p --filter_quantile 0.9
 --
-python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/future /home/kbrennan/phd/data/climate/cookies/future/comp_f --filter_lifetime 150 --filter_w 25
+python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/future /home/kbrennan/phd/data/climate/grids/subdomains_lonlat.nc /home/kbrennan/phd/data/climate/composites/future/comp_f --filter_lifetime 150 --filter_w 25
 
-python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/present /home/kbrennan/phd/data/climate/cookies/present/comp_f --filter_lifetime 150 --filter_w 25
+python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/present /home/kbrennan/phd/data/climate/grids/subdomains_lonlat.nc /home/kbrennan/phd/data/climate/composites/present/comp_f --filter_lifetime 150 --filter_w 25
 --
-python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/future /home/kbrennan/phd/data/climate/cookies/future/comp
+python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/future /home/kbrennan/phd/data/climate/grids/subdomains_lonlat.nc /home/kbrennan/phd/data/climate/composites/future/comp
 
-python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/present /home/kbrennan/phd/data/climate/cookies/present/comp
+python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/present /home/kbrennan/phd/data/climate/grids/subdomains_lonlat.nc /home/kbrennan/phd/data/climate/composites/present/comp
 ---------------------------------------------------------
 Killian P. Brennan
 08.05.2024
@@ -46,13 +46,15 @@ import multiprocessing as mp
 
 def main(
     cookie_dir,
+    subdomain_dir,
     composite_dir,
     filter_lifetime=None,
     filter_diameter=None,
     filter_w=None,
     filter_quantile=None,
     filter_n=None,
-    backend="cdo",
+    serial=False,
+    n_bootstrap=100,
 ):
     os.makedirs(composite_dir, exist_ok=True)
     # # remove existing composites
@@ -72,12 +74,31 @@ def main(
     subdomains = [
         sub for sub in subdomains if os.path.isdir(os.path.join(subdomains_dir, sub))
     ]
-    # do_calculations_cdo(cookie_dir, composite_dir, "BI", filter_lifetime, filter_diameter, filter_w)
+
+    subdomains.remove('MDS')
+    subdomains.remove('MDL')
+
+    # do_calculations_cdo(cookie_dir, composite_dir, "MD", filter_lifetime, filter_diameter, filter_w)
     # exit()
     print("subdomains", subdomains)
-    # do calculations for subdomains in parallel
-    with mp.Pool(len(subdomains)) as pool:
-        if backend == "cdo":
+
+    if serial:
+        for dom in subdomains:
+            do_calculations_cdo(
+                cookie_dir,
+                composite_dir,
+                dom,
+                subdomain_dir,
+                filter_lifetime,
+                filter_diameter,
+                filter_w,
+                filter_quantile,
+                filter_n,
+                n_bootstrap,
+            )
+    else:
+        # do calculations for subdomains in parallel
+        with mp.Pool(len(subdomains)) as pool:
             pool.starmap(
                 do_calculations_cdo,
                 [
@@ -85,20 +106,14 @@ def main(
                         cookie_dir,
                         composite_dir,
                         dom,
+                        subdomain_dir,
                         filter_lifetime,
                         filter_diameter,
                         filter_w,
                         filter_quantile,
                         filter_n,
+                        n_bootstrap,
                     )
-                    for dom in subdomains
-                ],
-            )
-        elif backend == "xarray":
-            pool.starmap(
-                do_calculations,
-                [
-                    (cookie_dir, composite_dir, dom, filter_lifetime, filter_diameter)
                     for dom in subdomains
                 ],
             )
@@ -109,14 +124,18 @@ def do_calculations_cdo(
     cookie_dir,
     composite_dir,
     dom,
+    subdomain_dir,
     filter_lifetime=None,
     filter_diameter=None,
     filter_w=None,
     filter_quantile=None,
     filter_n=None,
+    n_bootstrap=10,
 ):
 
-    seasons = ["DJF", "MAM", "JJA", "SON", "YEAR"]
+    # seasons = ["DJF", "MAM", "JJA", "SON", "YEAR"]
+    # seasons = ["DJF", "MAM", "JJA", "SON"]
+    seasons = ["MAM", "JJA", "SON"]
     # seasons = ['YEAR']
     months = {
         "DJF": "12,01,02",
@@ -131,6 +150,7 @@ def do_calculations_cdo(
         all_cookies,
         cookie_dir,
         dom,
+        subdomain_dir,
         filter_lifetime,
         filter_diameter,
         filter_w,
@@ -153,7 +173,7 @@ def do_calculations_cdo(
         # ---------------------------------------------------------
         # resample 100 times with replacement and calculate the mean
         # from those means calculate mean, std, q25, q75, median, q99 q01 for each variable
-        
+
         # make temporary directory for the bootstrapped means
         temp_dir_boot = os.path.join(temp_dir, "boot")
         os.makedirs(temp_dir_boot, exist_ok=True)
@@ -162,15 +182,26 @@ def do_calculations_cdo(
         os.makedirs(temp_dir_resampled, exist_ok=True)
 
         # calculate bootstrapped means
-        for i in range(100):
+        for i in range(n_bootstrap):
             # resample with replacement
-            resampled_cookies = np.random.choice(cookies_in_season, len(cookies_in_season), replace=True)
+            resampled_cookies = np.random.choice(
+                cookies_in_season, len(cookies_in_season), replace=True
+            )
             # link resampled cookies to temp_dir_resampled (add str(j) to allow for dublicate samples)
-            for j,c in enumerate(resampled_cookies):
-                os.symlink(c, os.path.join(temp_dir_resampled, os.path.basename(c).split(".")[0] + f"_{j}.nc"))
+            for j, c in enumerate(resampled_cookies):
+                os.symlink(
+                    c,
+                    os.path.join(
+                        temp_dir_resampled,
+                        os.path.basename(c).split(".")[0] + f"_{j}.nc",
+                    ),
+                )
             # calculate mean
-            cdo_command = f"cdo -w -O ensmean {temp_dir_resampled}/* {temp_dir_boot}/boot_{i}.nc"
+            cdo_command = (
+                f"cdo -w -O ensmean  {temp_dir_resampled}/* {temp_dir_boot}/boot_{i}.nc"
+            )
             os.system(cdo_command)
+
             # remove resampled cookies
             for c in os.listdir(temp_dir_resampled):
                 os.remove(os.path.join(temp_dir_resampled, c))
@@ -188,7 +219,7 @@ def do_calculations_cdo(
             season=season,
             n_cookies=len(cookies_in_season),
         )
-        cdo_command = f"cdo -w -O ensmean {temp_dir_boot}/* {writedir}"
+        cdo_command = f"cdo -w -O  ensmean {temp_dir_boot}/* {writedir}"
         os.system(cdo_command)
 
         # std
@@ -204,7 +235,7 @@ def do_calculations_cdo(
             season=season,
             n_cookies=len(cookies_in_season),
         )
-        cdo_command = f"cdo -w -O ensstd {temp_dir_boot}/* {writedir}"
+        cdo_command = f"cdo -w -O  ensstd {temp_dir_boot}/* {writedir}"
         os.system(cdo_command)
 
         # # q25
@@ -220,7 +251,7 @@ def do_calculations_cdo(
         #     season=season,
         #     n_cookies=len(cookies_in_season),
         # )
-        # cdo_command = f"cdo -w -O enspctl,25 {temp_dir_boot}/* {writedir}"
+        # cdo_command = f"cdo -w -O  enspctl,25 {temp_dir_boot}/* {writedir}"
         # os.system(cdo_command)
 
         # # q75
@@ -236,7 +267,7 @@ def do_calculations_cdo(
         #     season=season,
         #     n_cookies=len(cookies_in_season),
         # )
-        # cdo_command = f"cdo -w -O enspctl,75 {temp_dir_boot}/* {writedir}"
+        # cdo_command = f"cdo -w -O  enspctl,75 {temp_dir_boot}/* {writedir}"
         # os.system(cdo_command)
 
         # # median
@@ -252,7 +283,7 @@ def do_calculations_cdo(
         #     season=season,
         #     n_cookies=len(cookies_in_season),
         # )
-        # cdo_command = f"cdo -w -O enspctl,50 {temp_dir_boot}/* {writedir}"
+        # cdo_command = f"cdo -w -O  enspctl,50 {temp_dir_boot}/* {writedir}"
         # os.system(cdo_command)
 
         # q99
@@ -268,7 +299,7 @@ def do_calculations_cdo(
             season=season,
             n_cookies=len(cookies_in_season),
         )
-        cdo_command = f"cdo -w -O enspctl,99 {temp_dir_boot}/* {writedir}"
+        cdo_command = f"cdo -w -O  enspctl,99 {temp_dir_boot}/* {writedir}"
         os.system(cdo_command)
         # q01
         writedir = construct_writedir(
@@ -283,7 +314,7 @@ def do_calculations_cdo(
             season=season,
             n_cookies=len(cookies_in_season),
         )
-        cdo_command = f"cdo -w -O enspctl,1 {temp_dir_boot}/* {writedir}"
+        cdo_command = f"cdo -w -O  enspctl,1 {temp_dir_boot}/* {writedir}"
         os.system(cdo_command)
 
         # remove temp_dir_boot
@@ -292,14 +323,13 @@ def do_calculations_cdo(
         os.rmdir(temp_dir_boot)
         os.rmdir(temp_dir_resampled)
 
-
         # ---------------------------------------------------------
         # calculate straight mean, std, q25, q75, median, q90, q10 from original cookies
         # ---------------------------------------------------------
         # link cookies_in_season to temp_dir
         for c in cookies_in_season:
             os.symlink(c, os.path.join(temp_dir, os.path.basename(c)))
-            
+
         # mean
         writedir = construct_writedir(
             composite_dir,
@@ -313,7 +343,7 @@ def do_calculations_cdo(
             season=season,
             n_cookies=len(cookies_in_season),
         )
-        cdo_command = f"cdo -w -O ensmean {temp_dir}/* {writedir}"
+        cdo_command = f"cdo -w -O  ensmean {temp_dir}/* {writedir}"
         # print(cdo_command)
         os.system(cdo_command)
         print(dom, season, len(cookies_in_season))
@@ -331,7 +361,7 @@ def do_calculations_cdo(
             season=season,
             n_cookies=len(cookies_in_season),
         )
-        cdo_command = f"cdo -w -O ensstd {' '.join(cookies_in_season)} {writedir}"
+        cdo_command = f"cdo -w -O  ensstd {' '.join(cookies_in_season)} {writedir}"
         os.system(cdo_command)
 
         # q25
@@ -347,7 +377,7 @@ def do_calculations_cdo(
             season=season,
             n_cookies=len(cookies_in_season),
         )
-        cdo_command = f"cdo -w -O enspctl,25 {' '.join(cookies_in_season)} {writedir}"
+        cdo_command = f"cdo -w -O  enspctl,25 {' '.join(cookies_in_season)} {writedir}"
         os.system(cdo_command)
 
         # q75
@@ -363,7 +393,7 @@ def do_calculations_cdo(
             season=season,
             n_cookies=len(cookies_in_season),
         )
-        cdo_command = f"cdo -w -O enspctl,75 {' '.join(cookies_in_season)} {writedir}"
+        cdo_command = f"cdo -w -O  enspctl,75 {' '.join(cookies_in_season)} {writedir}"
         os.system(cdo_command)
 
         # median
@@ -379,7 +409,7 @@ def do_calculations_cdo(
             season=season,
             n_cookies=len(cookies_in_season),
         )
-        cdo_command = f"cdo -w -O enspctl,50 {' '.join(cookies_in_season)} {writedir}"
+        cdo_command = f"cdo -w -O  enspctl,50 {' '.join(cookies_in_season)} {writedir}"
         os.system(cdo_command)
 
         # # q90
@@ -395,7 +425,7 @@ def do_calculations_cdo(
         #     season=season,
         #     n_cookies=len(cookies_in_season),
         # )
-        # cdo_command = f"cdo -w -O enspctl,90 {' '.join(cookies_in_season)} {writedir}"
+        # cdo_command = f"cdo -w -O  enspctl,90 {' '.join(cookies_in_season)} {writedir}"
         # os.system(cdo_command)
 
         # remove temp_dir
@@ -410,6 +440,7 @@ def filter_cookies_cdo(
     cookies_files,
     cookie_dir,
     dom,
+    subdomain_dir,
     filter_lifetime=None,
     filter_diameter=None,
     filter_w=None,
@@ -425,6 +456,7 @@ def filter_cookies_cdo(
     cookies = filter_cookies(
         cookies,
         dom,
+        subdomain_dir,
         filter_lifetime,
         filter_diameter,
         filter_w,
@@ -436,27 +468,6 @@ def filter_cookies_cdo(
     cookies_files = [f"cookie_{c}.nc" for c in cookie_ids]
 
     return cookies_files
-
-
-# def do_calculations(
-#     cookie_dir,
-#     composite_dir,
-#     dom,
-#     filter_lifetime=None,
-#     filter_diameter=None,
-#     filter_w=None,
-# ):
-#     subdomains_dir = os.path.join(cookie_dir, "subdomains")
-#     cookies = load_cookies(os.path.join(subdomains_dir, dom))
-#     cookies = filter_cookies(cookies, filter_lifetime, filter_diameter)
-#     composite = calculate_composite(cookies)
-#     composite = composite.expand_dims({"domain": [dom]})
-#     writedir = construct_writedir(
-#         composite_dir, dom, filter_lifetime, filter_diameter, stat="comp"
-#     )
-#     composite.to_netcdf(writedir)
-#     print(f"finished composite for {dom}")
-#     return
 
 
 def construct_writedir(
@@ -504,6 +515,7 @@ def construct_writedir(
 def filter_cookies(
     cookies,
     dom,
+    subdomain_dir,
     filter_lifetime=None,
     filter_diameter=None,
     filter_w=None,
@@ -531,7 +543,7 @@ def filter_cookies(
     if filter_n is not None:
         # only use the n/1000km^2 per year cookies with the largest hail diameter
         subdomains = xr.open_dataset(
-            "/home/kbrennan/phd/data/climate/grids/subdomains.nc"
+            subdomain_dir,
         )
         dom_area = np.round(np.nansum(subdomains[dom] == 1) * 2.2**2)
         n_cookies = int(dom_area / 1000 * filter_n)
@@ -543,7 +555,7 @@ def filter_cookies(
 
     # only keep cookies after start of cell (filter out genesis cookies)
     cookies = cookies.where(
-        cookies.t_rel_start.astype('timedelta64[m]').astype(int) >= 0, drop=True
+        cookies.t_rel_start.astype("timedelta64[m]").astype(int) >= 0, drop=True
     )
     return cookies
 
@@ -633,6 +645,7 @@ def calculate_composite(cookies):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Calculate composites from cookies")
     parser.add_argument("cookie_dir", type=str, help="Directory containing cookies")
+    parser.add_argument('subdomain_dir', type=str, help="Directory containing subdomain file")
     parser.add_argument("composite_dir", type=str, help="Directory to save composites")
 
     parser.add_argument(
@@ -666,20 +679,27 @@ if __name__ == "__main__":
         help="only use the n/1000km^2 per year cookies with the largest hail diameter",
     )
     parser.add_argument(
-        "--backend",
-        type=str,
-        default="cdo",
-        help="Use xarray or cdo for calculations",
+        "--serial",
+        action="store_true",
+        help="Run calculations in serial",
     )
-
+    parser.add_argument(
+        "--n_bootstrap",
+        type=int,
+        default=100,
+        help="Number of bootstrap samples to calculate",
+    )
     args = parser.parse_args()
+
     main(
         args.cookie_dir,
+        args.subdomain_dir,
         args.composite_dir,
         args.filter_lifetime,
         args.filter_diameter,
         args.filter_w,
         args.filter_quantile,
         args.filter_n,
-        args.backend,
+        args.serial,
+        args.n_bootstrap,
     )
