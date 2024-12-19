@@ -61,25 +61,26 @@ def main(
     # for f in os.listdir(composite_dir):
     #     os.remove(os.path.join(composite_dir, f))
 
-    subdomains_dir = os.path.join(cookie_dir, "subdomains")
+    cookies_dir = os.path.join(cookie_dir, "subdomains")
 
-    if not os.path.exists(subdomains_dir):
+    if not os.path.exists(cookies_dir):
         print(
-            f"subdomains directory {subdomains_dir} does not exist, did you run assign_subdomains.py?"
+            f"subdomains directory {cookies_dir} does not exist, did you run assign_subdomains.py?"
         )
         sys.exit()
 
-    subdomains = os.listdir(subdomains_dir)
+    subdomains = os.listdir(cookies_dir)
     # must be directories
     subdomains = [
-        sub for sub in subdomains if os.path.isdir(os.path.join(subdomains_dir, sub))
+        sub for sub in subdomains if os.path.isdir(os.path.join(cookies_dir, sub))
     ]
 
-    subdomains.remove('MDS')
-    subdomains.remove('MDL')
+    # subdomains.remove("MDS")
+    # subdomains.remove("MDL")
 
-    # do_calculations_cdo(cookie_dir, composite_dir, "MD", filter_lifetime, filter_diameter, filter_w)
+    # do_calculations_cdo(cookie_dir, composite_dir, "BI", subdomain_dir,filter_lifetime, filter_diameter, filter_w, filter_quantile, filter_n, n_bootstrap)
     # exit()
+    # subdomains = ["BI", "MDS", "MDL", "ALL"]
     print("subdomains", subdomains)
 
     if serial:
@@ -542,16 +543,19 @@ def filter_cookies(
         )
     if filter_n is not None:
         # only use the n/1000km^2 per year cookies with the largest hail diameter
+        # print('subdomain_dir', subdomain_dir)
         subdomains = xr.open_dataset(
             subdomain_dir,
         )
         dom_area = np.round(np.nansum(subdomains[dom] == 1) * 2.2**2)
         n_cookies = int(dom_area / 1000 * filter_n)
+        print("n_cookies", n_cookies)
 
         # select the n cookies with the largest max hail diameter (max of DHAIL_MX variable)
         cookies["sort_val"] = cookies.DHAIL_MX.max(dim=["x", "y"])
         cookies = cookies.sortby("sort_val", ascending=False)
         cookies = cookies.isel(cookie_id=slice(0, n_cookies))
+        print("len(cookies.cookie_id)", len(cookies.cookie_id))
 
     # only keep cookies after start of cell (filter out genesis cookies)
     cookies = cookies.where(
@@ -645,7 +649,9 @@ def calculate_composite(cookies):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Calculate composites from cookies")
     parser.add_argument("cookie_dir", type=str, help="Directory containing cookies")
-    parser.add_argument('subdomain_dir', type=str, help="Directory containing subdomain file")
+    parser.add_argument(
+        "subdomain_dir", type=str, help="Directory containing subdomain file"
+    )
     parser.add_argument("composite_dir", type=str, help="Directory to save composites")
 
     parser.add_argument(
