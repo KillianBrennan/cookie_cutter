@@ -29,7 +29,7 @@ import xarray as xr
 import multiprocessing as mp
 
 
-def main(cookie_dir, inflow_dir,x_slice=(-20,20),y_slice=(30,60)):
+def main(cookie_dir, inflow_dir,x_slice=(-25,25),y_slice=(10,60)):
     subdomains = os.listdir(os.path.join(cookie_dir, 'subdomains'))
 
     # extractor(cookie_dir, inflow_dir, 'BI', x_slice, y_slice)
