@@ -484,6 +484,35 @@ def filter_cookies(
     return cookies
 
 
+def load_cookies(cookie_dir):
+    cookies = xr.open_mfdataset(
+        os.path.join(cookie_dir, "cookie_*.nc"),
+        combine="by_coords",
+        parallel=True,
+        chunks={"cookie_id": 1000},
+    )
+    cookies = add_season_to_cookies(cookies)
+
+    cookies = cookies.drop(
+        ["real_time", "t_rel_start", "t_rel_end", "t_rel_max", "cell_lifespan", "itime"]
+    )
+
+    return cookies
+
+
+def add_season_to_cookies(cookies):
+    # add season to cookies (DJF, MAM, JJA, SON)
+    cookies["season"] = xr.where(
+        cookies["real_time.month"].isin([12, 1, 2]),
+        "DJF",
+        xr.where(
+            cookies["real_time.month"].isin([3, 4, 5]),
+            "MAM",
+            xr.where(cookies["real_time.month"].isin([6, 7, 8]), "JJA", "SON"),
+        ),
+    )
+    return cookies
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Calculate composites from cookies")
     parser.add_argument("cookie_dir", type=str, help="Directory containing cookies")
