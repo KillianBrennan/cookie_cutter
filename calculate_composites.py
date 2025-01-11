@@ -13,7 +13,7 @@ OUT
 
 ---------------------------------------------------------
 EXAMPLE CALL
-python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/ /home/kbrennan/phd/data/climate/grids/subdomains_lonlat.nc /home/kbrennan/phd/data/climate/composites/comp_p0.95 --filter_quantile 0.95
+python /home/kbrennan/cookie_cutter/calculate_composites.py /home/kbrennan/phd/data/climate/cookies/ /home/kbrennan/phd/data/climate/grids/subdomains_lonlat.nc /home/kbrennan/phd/data/climate/composites/comp_p0.9 --filter_quantile 0.9
 ---------------------------------------------------------
 Killian P. Brennan
 08.05.2024
@@ -437,6 +437,10 @@ def filter_cookies(
     filter_quantile=None,
     filter_n=None,
 ):
+    # only keep cookies after start of cell (filter out genesis cookies) this needs to be done before any other filtering (quantile would be wrong otherwise)
+    cookies = cookies.where(
+        cookies.t_rel_start.astype("timedelta64[m]").astype(int) >= 0, drop=True
+    )
     if filter_lifetime is not None:
         cookies = cookies.where(
             cookies["cell_lifespan"] >= np.timedelta64(filter_lifetime, "m"),
@@ -477,10 +481,6 @@ def filter_cookies(
         cookies = cookies.isel(cookie_id=slice(0, n_cookies))
         print("len(cookies.cookie_id)", len(cookies.cookie_id))
 
-    # only keep cookies after start of cell (filter out genesis cookies)
-    cookies = cookies.where(
-        cookies.t_rel_start.astype("timedelta64[m]").astype(int) >= 0, drop=True
-    )
     return cookies
 
 
@@ -512,6 +512,7 @@ def add_season_to_cookies(cookies):
         ),
     )
     return cookies
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Calculate composites from cookies")
